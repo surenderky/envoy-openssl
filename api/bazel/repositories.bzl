@@ -36,6 +36,8 @@ def api_dependencies():
     )
     external_http_archive(
         name = "rules_buf",
+	patch_args = ["-p1"],
+	patches = ["@envoy_api//bazel:rules_buf-s390x.patch"],
     )
     external_http_archive(
         name = "rules_proto",
