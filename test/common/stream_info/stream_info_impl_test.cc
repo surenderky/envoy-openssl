@@ -387,7 +387,7 @@ TEST_F(StreamInfoImplTest, SetFromForRecreateStream) {
   s1.addPacketsRetransmitted(1);
 
 #ifdef __clang__
-#if defined(__linux__)
+#if defined(__linux__) && !defined(__s390x__)
 #if defined(__has_feature) && !(__has_feature(thread_sanitizer))
   assertStreamInfoSize(s1);
 #endif
@@ -448,7 +448,7 @@ TEST_F(StreamInfoImplTest, SetFrom) {
   s1.addCustomFlag("test_flag2");
 
 #ifdef __clang__
-#if defined(__linux__)
+#if defined(__linux__) && !defined(__s390x__)
 #if defined(__has_feature) && !(__has_feature(thread_sanitizer))
   assertStreamInfoSize(s1);
 #endif

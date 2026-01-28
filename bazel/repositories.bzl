@@ -779,6 +779,7 @@ def _highway():
         name = "highway",
         patches = [
             "@envoy//bazel:highway-ppc64le.patch",
+            "@envoy//bazel:highway-s390x.patch",
         ],
         patch_args = ["-p1"],
     )

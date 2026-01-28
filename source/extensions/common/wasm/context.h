@@ -466,7 +466,8 @@ protected:
 };
 using ContextSharedPtr = std::shared_ptr<Context>;
 
-WasmResult serializeValue(Filters::Common::Expr::CelValue value, std::string* result);
+WasmResult serializeValue(Filters::Common::Expr::CelValue value, std::string* result,
+                          bool uses_wasm_byte_order);
 
 } // namespace Wasm
 } // namespace Common

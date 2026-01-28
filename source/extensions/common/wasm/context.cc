@@ -352,9 +352,49 @@ void Context::onStatsUpdate(Envoy::Stats::MetricSnapshot& snapshot) {
   wasm()->on_stats_update_(this, id_, counter_block_size + gauge_block_size);
 }
 
+static void assignNumeric(const char* value, size_t length, std::string* result,
+                          [[maybe_unused]] bool uses_wasm_byte_order) {
+#ifdef ABSL_IS_LITTLE_ENDIAN
+  result->assign(value, length);
+#else
+  if (!uses_wasm_byte_order) {
+    result->assign(value, length);
+    return;
+  }
+
+  switch (length) {
+  case 8: {
+    uint64_t value_uint64_le;
+    safeMemcpyUnsafeSrc(&value_uint64_le, value);
+    value_uint64_le = le64toh(value_uint64_le);
+    result->assign(reinterpret_cast<const char*>(&value_uint64_le), length);
+    break;
+  }
+  case 4: {
+    uint32_t value_uint32_le;
+    safeMemcpyUnsafeSrc(&value_uint32_le, value);
+    value_uint32_le = le32toh(value_uint32_le);
+    result->assign(reinterpret_cast<const char*>(&value_uint32_le), length);
+    break;
+  }
+  case 2: {
+    uint16_t value_uint16_le;
+    safeMemcpyUnsafeSrc(&value_uint16_le, value);
+    value_uint16_le = le16toh(value_uint16_le);
+    result->assign(reinterpret_cast<const char*>(&value_uint16_le), length);
+    break;
+  }
+  default:
+    result->assign(value, length);
+    break;
+  }
+#endif
+}
+
 // Native serializer carrying over bit representation from CEL value to the extension.
 // This implementation assumes that the value type is static and known to the consumer.
-WasmResult serializeValue(Filters::Common::Expr::CelValue value, std::string* result) {
+WasmResult serializeValue(Filters::Common::Expr::CelValue value, std::string* result,
+                          bool uses_wasm_byte_order) {
   using Filters::Common::Expr::CelValue;
   int64_t out_int64;
   uint64_t out_uint64;
@@ -370,15 +410,18 @@ WasmResult serializeValue(Filters::Common::Expr::CelValue value, std::string* re
     return WasmResult::Ok;
   case CelValue::Type::kInt64:
     out_int64 = value.Int64OrDie();
-    result->assign(reinterpret_cast<const char*>(&out_int64), sizeof(int64_t));
+    assignNumeric(reinterpret_cast<const char*>(&out_int64), sizeof(int64_t), result,
+                  uses_wasm_byte_order);
     return WasmResult::Ok;
   case CelValue::Type::kUint64:
     out_uint64 = value.Uint64OrDie();
-    result->assign(reinterpret_cast<const char*>(&out_uint64), sizeof(uint64_t));
+    assignNumeric(reinterpret_cast<const char*>(&out_uint64), sizeof(uint64_t), result,
+                  uses_wasm_byte_order);
     return WasmResult::Ok;
   case CelValue::Type::kDouble:
     out_double = value.DoubleOrDie();
-    result->assign(reinterpret_cast<const char*>(&out_double), sizeof(double));
+    assignNumeric(reinterpret_cast<const char*>(&out_double), sizeof(double), result,
+                  uses_wasm_byte_order);
     return WasmResult::Ok;
   case CelValue::Type::kBool:
     out_bool = value.BoolOrDie();
@@ -387,12 +430,14 @@ WasmResult serializeValue(Filters::Common::Expr::CelValue value, std::string* re
   case CelValue::Type::kDuration:
     // Warning: loss of precision to nanoseconds
     out_int64 = absl::ToInt64Nanoseconds(value.DurationOrDie());
-    result->assign(reinterpret_cast<const char*>(&out_int64), sizeof(int64_t));
+    assignNumeric(reinterpret_cast<const char*>(&out_int64), sizeof(int64_t), result,
+                  uses_wasm_byte_order);
     return WasmResult::Ok;
   case CelValue::Type::kTimestamp:
     // Warning: loss of precision to nanoseconds
     out_int64 = absl::ToUnixNanos(value.TimestampOrDie());
-    result->assign(reinterpret_cast<const char*>(&out_int64), sizeof(int64_t));
+    assignNumeric(reinterpret_cast<const char*>(&out_int64), sizeof(int64_t), result,
+                  uses_wasm_byte_order);
     return WasmResult::Ok;
   case CelValue::Type::kMessage:
     out_message = value.MessageOrDie();
@@ -410,10 +455,11 @@ WasmResult serializeValue(Filters::Common::Expr::CelValue value, std::string* re
     const auto& keys = *keys_list.value();
     std::vector<std::pair<std::string, std::string>> pairs(map.size(), std::make_pair("", ""));
     for (auto i = 0; i < map.size(); i++) {
-      if (serializeValue(keys[i], &pairs[i].first) != WasmResult::Ok) {
+      if (serializeValue(keys[i], &pairs[i].first, uses_wasm_byte_order) != WasmResult::Ok) {
         return WasmResult::SerializationFailure;
       }
-      if (serializeValue(map[keys[i]].value(), &pairs[i].second) != WasmResult::Ok) {
+      if (serializeValue(map[keys[i]].value(), &pairs[i].second, uses_wasm_byte_order) !=
+          WasmResult::Ok) {
         return WasmResult::SerializationFailure;
       }
     }
@@ -430,7 +476,7 @@ WasmResult serializeValue(Filters::Common::Expr::CelValue value, std::string* re
     const auto& list = *value.ListOrDie();
     std::vector<std::pair<std::string, std::string>> pairs(list.size(), std::make_pair("", ""));
     for (auto i = 0; i < list.size(); i++) {
-      if (serializeValue(list[i], &pairs[i].first) != WasmResult::Ok) {
+      if (serializeValue(list[i], &pairs[i].first, uses_wasm_byte_order) != WasmResult::Ok) {
         return WasmResult::SerializationFailure;
       }
     }
@@ -614,7 +660,7 @@ WasmResult Context::getProperty(std::string_view path, std::string* result) {
     }
   }
 
-  return serializeValue(value, result);
+  return serializeValue(value, result, wasmVm()->usesWasmByteOrder());
 }
 
 // Header/Trailer/Metadata Maps.

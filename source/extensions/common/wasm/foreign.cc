@@ -258,7 +258,7 @@ public:
         return WasmResult::InternalFailure;
       }
       std::string result;
-      auto serialize_status = serializeValue(value, &result);
+      auto serialize_status = serializeValue(value, &result, false);
       if (serialize_status != WasmResult::Ok) {
         return serialize_status;
       }
